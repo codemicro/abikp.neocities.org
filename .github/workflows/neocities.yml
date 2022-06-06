@@ -1,7 +1,9 @@
-name: Deploy to neocities
+name: Deploy to Neocities
 
 on:
   push:
+    paths:
+      - "site/*"
     branches:
       - main
   workflow_dispatch:
