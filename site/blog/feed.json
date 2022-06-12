@@ -1,0 +1,20 @@
+{
+  "version": "https://jsonfeed.org/version/1",
+  "title": "Abi's blog",
+  "home_page_url": "https://abikp.neocities.org",
+  "author": {
+    "name": "Abi KP"
+  },
+  "items": [
+    {
+      "id": "planning-a-search-engine",
+      "url": "https://abikp.neocities.org/blog/planning-a-search-engine.html",
+      "title": "Planning a Search Engine",
+      "summary": "Building a search engine from scratch for fun and... expense?",
+      "date_published": "2022-06-12T00:00:00Z",
+      "author": {
+        "name": "Abi KP"
+      }
+    }
+  ]
+}

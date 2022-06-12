@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+        <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Planning a Search Engine :: Abi KP</title><link rel="stylesheet" type="text/css" href="/main.css"><meta name="theme-color" content="#b335f2"><meta property="og:title" content="Planning a Search Engine :: Abi KP"><meta property="og:site_name" content="abikp.neocities.org"><meta name="description" content="Building a search engine from scratch for fun and... expense?"><meta property="og:description" content="Building a search engine from scratch for fun and... expense?"><meta property="og:url" content="https://abikp.neocities.org/blog/planning-a-search-engine"><link rel="alternate" type="application/atom+xml" href="https://abikp.neocities.org/blog/feed.atom"><link rel="alternate" type="application/json" href="https://abikp.neocities.org/blog/feed.json">
+<style>
+    .mdcontent .header > a {
+        text-decoration: none;
+    }
+</style>
+
+    </head>
+
+    <body>
+        
+
+<div class="container">
+
+    
+    <h1>Planning a Search Engine</h1>
+    <p>
+        Building a search engine from scratch for fun and... expense?<br><br>
+        
+        By Abi KP<br>2022-06-12<br>6 minutes reading time
+
+
+        
+    </p>
+    
+    
+    <span class="secondary">You are here: 
+    <a href="https://abikp.neocities.org/">Homepage</a>
+ &gt;&gt; this post</span>
+
+
+    <hr>
+
+    <div class="mdcontent"><p>I've decided that one of my summer 
+projects will be to build a search engine and accompanying 
+crawler/spider (I'll end up calling it both from time to time) from 
+scratch, because I feel like it, while also turning it into a series of 
+posts on this blog.</p>
+<p>This specific post is going to be dedicated to planning the project 
+out - defining the components, the architecture, the database schemas, 
+and some other stuff.</p>
+<p>But first - we need a name, because the name is the most important part of the project!<sup>[citation needed]</sup>
+ I'm calling my search engine Surchable, which I lifted from an Amazon 
+Original series called Undone. In S1E6, one of the characters, San, is 
+using a search engine called... Surchable! I stole the name.</p>
+<figure>
+<img src="planning-a-search-engine_files/surchable.jpg" alt="Screenshot from Undone">
+<center><figcaption style="padding-top: 5px;" class="secondary">I promise this isn't a photograph of a TV screen</figcaption></center>
+</figure>
+<h2 id="project-aims" class="header">Project aims <a href="#project-aims">#</a></h2>
+<p>As part of this project, I want to:</p>
+<ul>
+<li>build a search engine for the <em>non-commercial</em> internet, much like <a href="https://search.marginalia.nu/" rel="noopener noreferrer">search.marginalia.nu</a>.<sup id="marker-1"><a href="#footnote-1">1</a></sup></li>
+<li>learn some stuff about various web standards (eg: robots.txt files, proper user agent formatting, database design, etc)</li>
+<li>have some fun</li>
+<li>end up with a somewhat-usable product at the end that people might actually use</li>
+</ul>
+<p>Accordingly, there's also some anti-aims. I don't want to:</p>
+<ul>
+<li>piss anyone off (this means I <em>must</em> respect robots.txt files, <code>Cache-Control</code> headers, ratelimiting and the like)</li>
+<li>do extra work (try and coordinate things neatly between synchronous 
+workers so I'm not re-indexing the same content over and over without 
+due need)</li>
+<li>create a mindlessly slow piece of software (it's not going to be blazingly fast, but I'd like it to be decently quick)</li>
+</ul>
+<h2 id="high-level-architecture" class="header">High-level architecture <a href="#high-level-architecture">#</a></h2>
+<p>There's going to be three main components to Surchable.</p>
+<ol>
+<li>The crawlers</li>
+<li>The coordinator</li>
+<li>The web UI</li>
+</ol>
+<p>Let's start with the crawlers, of which we'll run multiple instances of at the same time.</p>
+<p>The job of the crawlers will be to take "jobs" from the coordinator 
+and execute them. A job will be to go to a specific (sub)domain and make
+ some observations about each HTML page on it<sup id="marker-2"><a href="#footnote-2">2</a></sup> - where it links to, how large the page is, if it uses JavaScript, what it says, etc, etc. It'll do this by first loading the <code>/</code>
+ route (or another starting point specified by the coordinator), 
+scanning that for hyperlinks and collecting data about that page, then 
+scanning all other pages it can find based on those hyperlinks by 
+repeating the same process.</p>
+<p>Before it requests any page, it'll check in with the coordinator to 
+make sure that this page hasn't been scanned recently to avoid hammering
+ a given site.</p>
+<p>After every page load, the crawler will submit information about a 
+page to the coordinator. When the entire job is finished, the crawler 
+will tell that to the coordinator too, and then move on to processing 
+another job.</p>
+<p>But what happens if the crawler crashes mid-way through a job? If we 
+add a rule to the coordinator to say that any in-progress job should see
+ the crawler that's working on it check-in at least once every <code>x</code>
+ minutes, and a crawler doesn't fufil this, we assume the crawler's gone
+ offline for some reason and release the job to be assigned to another 
+crawler.</p>
+<p>The coordinator itself will be the thing building and updating the 
+master search index and page metadata tables, as well as managing job 
+coordination, as mentioned earlier. Without going into huge detail about
+ its inner workings, there's not a lot to say about it.</p>
+<p>You can kinda see the whole process that we talk about above in this Swimlanes diagram.</p>
+<!--
+Crawler -> Coordinator: *"I'd like a job to do, please."*
+
+Coordinator -\-> Database: Records job and assigns to this crawler
+
+Coordinator -> Crawler: *"Ok, crawl www.example.com"*
+
+if: Repeat for different pages while there are internal links on `www.example.com` that have not yet been visited
+  Crawler -\-> Coordinator: *"Is it ok to request `/`"?*
+
+  Coordinator -\-> Database: Records pageload intent
+
+  note:
+  This intent will expire after `n` minutes without activity.
+
+  Coordinator -\-> Crawler: *"Yes."*
+
+  Crawler -> www.example.com: `GET /`
+
+  www.example.com -> Crawler: `200 OK...`
+
+  Crawler -> Coordinator: `/` has the following content and is a HTML file. It links to x, y, z.
+
+	Coordinator -\-> Database: Stores data in index, updates pageload intent
+
+end
+
+Crawler -> Coordinator: *"I've finished crawling www.example.com"*
+
+Coordinator -\-> Database: Updates job and marks as completed
+
+Coordinator -> Crawler: *"Ok."*
+-->
+<a href="planning-a-search-engine_files/swimlane.png" target="_blank" style="text-decoration: none">
+<figure>
+<img src="planning-a-search-engine_files/swimlane.png" alt="Swimlane diagram">
+<center><figcaption style="padding-top: 5px;" class="secondary">Click to enlarge</figcaption></center>
+</figure>
+</a>
+<p>Finally, the web UI. This is the only thing a user can see and 
+interact with - it will allow someone to input a queryand get a list of 
+results out and submit a URL for scanning. It'll have to perform result 
+ranking, which (at least, for now) I plan to do using a combination of a
+ relevancy filter and a bastardised version of the PageRank algorithm 
+that was (is?) used by Google.<sup id="marker-3"><a href="#footnote-3">3</a></sup></p>
+<p>The relevancy stuff is going to be done with some fancy maths 
+involving frequencies and logarithms that I'll go into in more detail in
+ the future.</p>
+<h2 id="the-tech-stack" class="header">The tech stack <a href="#the-tech-stack">#</a></h2>
+<p>I've heard <a href="https://go.dev/" rel="noopener noreferrer">Golang</a>
+ called "the programming language for the internet" - it excels when 
+used for writing networking or web applications, and for that reason 
+it's going to be my primary language for this project. It'll be used to 
+build the server for the web UI and the coordinator. This also allows 
+core libraries, like the database access libraries, to be easily shared 
+across the different applications that make up the search engine.</p>
+<p>The actual crawlers will be implemented in <a href="https://python.org/" rel="noopener noreferrer">Python</a>, due to the maturity of libraries like BeautifulSoup and Selenium or Playwright for Python.<sup id="marker-4"><a href="#footnote-4">4</a></sup>
+ I'm not yet decided if I want to use instances of headless Chrome and 
+similar for the scrapers yet, or if I want to just request plain HTML 
+and process that. I'm leaning towards the latter since it's considerably
+ simpler and since it shouldn't matter if we don't have JS support for 
+what we're doing, but we'll have to wait and see.</p>
+<p>The database will be built around a database server, likely 
+PostgreSQL. Typically, I'd use a single-file database, such as SQLite3, 
+but this isn't feasable when both the web UI and the coordinator will be
+ accessing the same database at the same time.</p>
+<p>The web UI will be built from scratch as a set of HTML and (<a href="https://sass-lang.com/" rel="noopener noreferrer">S</a>)CSS pages that are rendered on the server then sent to a user's browser. I very briefly considered using <a href="https://svelte.dev/" rel="noopener noreferrer">Svelte</a>
+ for the front-end, but I'd much prefer to keep things as simple and as 
+light-weight as possible. If I want to add some SPA-style interactions 
+into the frontend, I'll use <a href="https://htmx.org/" rel="noopener noreferrer">HTMX</a>, which is a super, <em>super</em>
+ cool JavaScript library that enables HTML to be sent over-the-wire and 
+inserted into the currently loaded page, all configured via attributes 
+on HTML elements. As a plus, it's also fairly small.</p>
+<h2 id="the-series" class="header">The series <a href="#the-series">#</a></h2>
+<p>I plan to make a series of ~4 blog posts about Surchable, this one 
+included. Development won't be starting for a couple of weeks yet due to
+ real-life goings on, but this is going to be my summer project. I have 
+both an Atom feed and a JSON feed if you want to subscribe for future 
+posts. If you've got any questions at the moment, send me a friend request on Discord (check my homepage for details) and I'll be more than happy to chat with you.</p>
+<h2 id="footnotes" class="header">Footnotes <a href="#footnotes">#</a></h2>
+<ol>
+<li><span id="footnote-1">I think a pretty easy way to do this is to 
+check and see if a page has ads on it or not, if so, excluding it from 
+the index and not crawling any pages it links to.</span> <a href="#marker-1">↝</a></li>
+<li><span id="footnote-2">And maybe plain text files too, since they 
+should be pretty simple to tokenise and throw into the database. More 
+information about tokenising and the database table structure coming 
+later on! Promise.</span> <a href="#marker-2">↝</a></li>
+<li><span id="footnote-3"><a href="https://en.wikipedia.org/wiki/PageRank#Algorithm" rel="noopener noreferrer">https://en.wikipedia.org/wiki/PageRank#Algorithm</a></span> <a href="#marker-3">↝</a></li>
+<li><span id="footnote-4">While yes, there are alternatives to both of 
+these for Go, they're a little more clunky than the Python versions. 
+I've also done large-scale web-scraping projects in Python before now.</span> <a href="#marker-4">↝</a></li>
+</ol>
+</div> 
+
+</div>
+
+
+        
+        <div class="container">
+            <hr>
+            <p class="secondary">
+                <br>© Abi KP, 2022. Written content licensed under <a rel="license" href="http://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
+            </p>
+        </div>
+    
+
+</body></html>

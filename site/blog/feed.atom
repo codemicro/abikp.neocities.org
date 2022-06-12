@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Abi&#39;s blog</title>
+  <id>https://abikp.neocities.org/blog</id>
+  <updated></updated>
+  <link href="https://abikp.neocities.org"></link>
+  <author>
+    <name>Abi KP</name>
+  </author>
+  <entry>
+    <title>Planning a Search Engine</title>
+    <updated>2022-06-12T00:00:00Z</updated>
+    <id>planning-a-search-engine</id>
+    <link href="https://abikp.neocities.org/blog/planning-a-search-engine.html" rel="alternate"></link>
+    <summary type="html">Building a search engine from scratch for fun and... expense?</summary>
+    <author>
+      <name>Abi KP</name>
+    </author>
+  </entry>
+</feed>
